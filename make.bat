@@ -1,0 +1,1 @@
+g++ hi.cc  ./src/*.h ./src/*.cc ./src/layer/* ./src/optimizer/*  -o a.exe  
