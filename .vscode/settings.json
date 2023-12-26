@@ -54,6 +54,9 @@
         "xlocnum": "cpp",
         "xloctime": "cpp",
         "xstring": "cpp",
-        "unordered_map": "cpp"
+        "unordered_map": "cpp",
+        "functional": "cpp",
+        "list": "cpp",
+        "xhash": "cpp"
     }
 }

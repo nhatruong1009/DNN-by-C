@@ -57,12 +57,12 @@ public:
         fprintf(fil,"[%d %d]\n",size.x,size.y);
     }
 
-    bool is_one_block(){
+    bool is_one_block() const {
         return oneblock;
     }
 
     
-    void const print(bool _int = false){
+    void print(bool _int = false) const{
         if (!_int)
         for(int i = 0 ; i < size.x ; i ++){
             for (int j = 0 ; j < size.y; j ++){

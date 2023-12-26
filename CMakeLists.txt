@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.0)
 
-project (DNN LANGUAGES CXX)
+project (DNN LANGUAGES CUDA CXX)
 aux_source_directory(. SRC)
 add_subdirectory(src)
-add_executable(demo ${SRC})
+add_subdirectory(src/layer_cuda)
+
+add_executable(demo testcuda.cu)
 target_link_libraries(demo lib)
+target_link_libraries(demo cuda_lib)
