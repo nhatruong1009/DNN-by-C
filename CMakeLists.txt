@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.0)
 
+#add_definitions(-DUnifiedMem) #use Unified Mem
+
 project (DNN LANGUAGES CUDA CXX)
 aux_source_directory(. SRC)
 add_subdirectory(src)

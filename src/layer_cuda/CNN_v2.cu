@@ -175,7 +175,13 @@ void CNN_cuda_v2::forward(const Matrix& _input){
     // out: this->_foward;
     // filter.size.x : out_chanels;
     _foward.setSize(_input.size.x, filter.size.x * out_cols *out_rows);
-    
+
+    dim3 blockSize(32,32);
+    dim3 gridSize((in_cols-1)/blockSize.x+1,(in_rows-1)/blockSize.y+1);
+    int shared_width = blockSize.x + filter_width - 1;
+    int shared_height = blockSize.y + filter_width - 1;
+    int shared_size = shared_width *  shared_height * in_channels;
+#ifndef UnifiedMem
     double* input;
     double* output;
     double* fil;
@@ -184,9 +190,6 @@ void CNN_cuda_v2::forward(const Matrix& _input){
     size_t inbytes = sizeof(double)*in_rows*in_cols*in_channels;
     size_t outbytes = sizeof(double)*out_rows*out_cols*filter.size.x;
     size_t filterbytes = sizeof(double)*filter_width*filter_width*in_channels*filter.size.x;
-
-    dim3 blockSize(32,32);
-    dim3 gridSize((in_cols-1)/blockSize.x+1,(in_rows-1)/blockSize.y+1);
     
     CHECK(cudaMalloc(&input,inbytes));
     CHECK(cudaMalloc(&output,outbytes));
@@ -194,10 +197,6 @@ void CNN_cuda_v2::forward(const Matrix& _input){
     CHECK(cudaMalloc(&d_bias,sizeof(double)*filter.size.x));
     CHECK(cudaMemcpy(fil,this->filter.data[0],filterbytes,cudaMemcpyHostToDevice));
     CHECK(cudaMemcpy(d_bias,bias.data[0],sizeof(double)*filter.size.x,cudaMemcpyHostToDevice));
-
-    int shared_width = blockSize.x + filter_width - 1;
-    int shared_height = blockSize.y + filter_width - 1;
-    int shared_size = shared_width *  shared_height * in_channels;
 
     if (padding)
         for(int sample = 0 ; sample < _foward.size.x ; sample ++){
@@ -216,4 +215,14 @@ void CNN_cuda_v2::forward(const Matrix& _input){
     cudaFree(output);
     cudaFree(d_bias);
     cudaFree(fil);
+#else   
+    if (padding)
+        for(int sample = 0 ; sample < _foward.size.x ; sample ++){
+            convPad<<<gridSize,blockSize,shared_size*sizeof(double)>>>(_input.data[sample],in_cols,in_rows,in_channels,filter.data[0],filter_width,filter.size.x,bias.data[0],_foward.data[sample],shared_width, shared_height);
+        }
+    else
+        for(int sample = 0 ; sample < _foward.size.x ; sample ++){
+            convNonePad<<<gridSize,blockSize,shared_size*sizeof(double)>>>(_input.data[sample],in_cols,in_rows,in_channels,filter.data[0],filter_width,filter.size.x,bias.data[0],_foward.data[sample],shared_width, shared_height);
+        }
+#endif
 }

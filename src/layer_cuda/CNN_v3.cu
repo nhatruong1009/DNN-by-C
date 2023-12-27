@@ -105,12 +105,12 @@ void CNN_cuda_v3::forward(const Matrix& _input){
     dim3 blockSize(32,32);
     dim3 gridSize((m-1)/blockSize.x+1,(k-1)/blockSize.y+1);
 
+#ifndef UnifiedMem
     double *d_filter;
     double *d_input;
     double *d_output;
     double *d_bias;
     
-
     CHECK(cudaMalloc(&d_filter,sizeof(double)*m*n));
     CHECK(cudaMemset(d_filter,0,sizeof(double)*m*n));
     //transform filter
@@ -162,4 +162,7 @@ void CNN_cuda_v3::forward(const Matrix& _input){
     cudaFree(d_input);
     cudaFree(d_output);
     cudaFree(d_bias);
+#else
+
+#endif
 }

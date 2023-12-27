@@ -1,8 +1,19 @@
-#include "matrix.h"
+#include "../matrix.h"
 #include <cstring>
 
+#define CHECK(call)\
+{\
+    const cudaError_t error = call;\
+    if (error != cudaSuccess)\
+    {\
+        fprintf(stderr, "Error: %s:%d, ", __FILE__, __LINE__);\
+        fprintf(stderr, "code: %d, reason: %s\n", error,\
+                cudaGetErrorString(error));\
+        exit(1);\
+    }\
+}
 
-extern FILE * fil;
+
 
 Matrix::Matrix(){
     this->size.x = 0;
@@ -14,10 +25,17 @@ Matrix::Matrix(int x,int y,bool oneblock){
     this->size.x = x;
     this->size.y = y;
     this->oneblock = oneblock;
-    this->data = (double**)malloc(size.x*sizeof(double*));
-
+    #ifndef UnifiedMem
+        this->data = (double**)malloc(size.x*sizeof(double*));
+    #else
+        CHECK(cudaMallocManaged(&this->data,sizeof(double*)*size.x));
+    #endif
     if (oneblock == true){
-        data[0] = (double*)malloc(size.x*size.y*sizeof(double));
+        #ifndef UnifiedMem
+            data[0] = (double*)malloc(size.x*size.y*sizeof(double));
+        #else
+            CHECK(cudaMallocManaged(&this->data[0],sizeof(double)*size.x*size.y));
+        #endif
         if(data[0] != NULL){
             for(int i = 1 ; i < size.x ; i++){
                 data[i] = data[0] + size.y*i; // this is legit :))
@@ -26,21 +44,56 @@ Matrix::Matrix(int x,int y,bool oneblock){
         }
         this->oneblock = false;
     }
-    for(int i = 0; i < size.x ; i++){
-        data[i] = (double*)malloc(size.y*sizeof(double));
-    }
+    
+    #ifndef UnifiedMem
+        for(int i = 0; i < size.x ; i++)
+            data[i] = (double*)malloc(size.y*sizeof(double));
+    #else
+        for(int i = 0; i < size.x ; i++)
+            CHECK(cudaMallocManaged(&this->data[i],sizeof(double)*size.y));
+    #endif
 }
 
 Matrix::Matrix(const Matrix& mal){
     this->setSize(mal.size);
-    for(int i = 0 ; i < size.x; i++)
-        memcpy(data[i], mal.data[i], size.y *sizeof(double));
+
+    if (this->is_one_block() && mal.is_one_block()){
+        #ifndef UnifiedMem
+            memcpy(data[0], mal.data[0], size.x * size.y * sizeof(double) );
+        #else
+            CHECK(cudaMemcpy(data[0],mal.data[0],size.x * size.y * sizeof(double),cudaMemcpyDefault));
+        #endif
+        return;
+    }
+
+    for(int i = 0 ; i < size.x; i++){
+        #ifndef UnifiedMem
+            memcpy(data[i], mal.data[i], size.y *sizeof(double));
+        #else
+            CHECK(cudaMemcpy(data[i],mal.data[i],size.y * sizeof(double),cudaMemcpyDefault));
+        #endif
+    }
 }
 
 bool Matrix::operator=(const Matrix& mal){
     this->setSize(mal.size);
-    for(int i = 0 ; i < size.x; i++)
-        memcpy(data[i], mal.data[i], size.y * sizeof(double) );
+
+    if (this->is_one_block() && mal.is_one_block()){
+        #ifndef UnifiedMem
+            memcpy(data[0], mal.data[0], size.x * size.y * sizeof(double) );
+        #else
+            CHECK(cudaMemcpy(data[0],mal.data[0],size.x * size.y * sizeof(double),cudaMemcpyDefault));
+        #endif
+        return true;
+    }
+
+    for(int i = 0 ; i < size.x; i++){
+        #ifndef UnifiedMem
+            memcpy(data[i], mal.data[i], size.y * sizeof(double) );
+        #else
+            CHECK(cudaMemcpy(data[0],mal.data[0], size.y * sizeof(double),cudaMemcpyDefault));
+        #endif
+    }
     return true;
 }
 
@@ -50,14 +103,29 @@ Matrix::~Matrix()
         return;
 
     if(oneblock == true){
-        free(data[0]);
-        free(data);
+        #ifndef UnifiedMem
+            free(data[0]);
+            free(data);
+        #else
+            cudaFree(data[0]);
+            cudaFree(data);
+        #endif
         return;
     }
-    for(int i = 0 ; i < size.x; i++){
-        free(data[i]);
-    }
-    free(data);
+    
+    #ifndef UnifiedMem
+        for(int i = 0 ; i < size.x; i++)
+            free(data[i]);
+    #else
+        for(int i = 0 ; i < size.x; i++)
+            cudaFree(data[i]);
+    #endif
+    
+    #ifndef UnifiedMem
+        free(data);
+    #else
+        cudaFree(data);
+    #endif
 }
 
 void Matrix::apply(double(*func)(double)){
@@ -82,11 +150,19 @@ void Matrix::setSize(int x,int y,bool oneblock){
     this->oneblock = oneblock;
     this->size.x = x;
     this->size.y = y;
-
-    this->data = (double**)malloc(size.x*sizeof(double*));
+    
+    #ifndef UnifiedMem
+        this->data = (double**)malloc(size.x*sizeof(double*));
+    #else
+        CHECK(cudaMallocManaged(&this->data,sizeof(double*)*size.x));
+    #endif
 
     if (oneblock == true){
-        data[0] = (double*)malloc(size.x*size.y*sizeof(double));
+        #ifndef UnifiedMem
+            data[0] = (double*)malloc(size.x*size.y*sizeof(double));
+        #else
+            CHECK(cudaMallocManaged(&this->data[0],sizeof(double*)*size.x*size.y));
+        #endif
         if(data[0] != NULL){
             for(int i = 1 ; i < size.x ; i++){
                 data[i] = data[i-1] + size.y; // this is legit :))
@@ -95,9 +171,14 @@ void Matrix::setSize(int x,int y,bool oneblock){
         }
         this->oneblock = false;
     }
-    for(int i = 0; i < size.x ; i++){
-        data[i] = (double*)malloc(size.y*sizeof(double));
-    }
+    
+    #ifndef UnifiedMem
+        for(int i = 0; i < size.x ; i++)
+            data[i] = (double*)malloc(size.y*sizeof(double));
+    #else
+        for(int i = 0; i < size.x ; i++)
+            CHECK(cudaMallocManaged(&this->data[i],sizeof(double*)*size.y));
+    #endif
 }
 
 //operator
@@ -242,10 +323,19 @@ void Matrix::ToOneHot(int num_catagory){
 
 void Matrix::setval(int val){
     if(oneblock == true){
-        memset(data[0],val,sizeof(double)*size.x*size.y);
+        #ifndef UnifiedMem
+            memset(data[0],val,sizeof(double)*size.x*size.y);
+        #else
+            CHECK(cudaMemset(data[0],val,sizeof(double)*size.x*size.y));
+        #endif
         return;
     }
-    for(int i = 0 ; i < size.x; i++){
+    #ifndef UnifiedMem
+        for(int i = 0 ; i < size.x; i++)
         memset(data[i],val,sizeof(double)*size.y);
-    }
+    #else
+        for(int i = 0 ; i < size.x; i++)
+            CHECK(cudaMemset(data[i],val,sizeof(double)*size.y));
+    #endif
+
 }
