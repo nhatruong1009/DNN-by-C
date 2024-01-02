@@ -1,5 +1,7 @@
 #include "CNN_v1.h"
 
+#define MAXSTREAM 8
+
 #define CHECK(call)\
 {\
     const cudaError_t error = call;\
@@ -94,52 +96,77 @@ void CNN_cuda_v1::forward(const Matrix& _input){
     // in: _input
     // out: this->_foward;
     // filter.size.x : out_chanels;
+    // x -> số dòng
+    // y -> số cột
+    // x -> số mẫu
+    // y -> đầu vào: kích htước -> in_rows * in_cols * in_chanels
     _foward.setSize(_input.size.x, filter.size.x * out_cols *out_rows);
     dim3 blockSize(32,32);
     dim3 gridSize((in_cols-1)/blockSize.x+1,(in_rows-1)/blockSize.y+1);
-
+    cudaStream_t *stream = (cudaStream_t*)  malloc(sizeof(cudaStream_t)*MAXSTREAM);
+    for (int i = 0 ; i < MAXSTREAM; i++)
+        CHECK(cudaStreamCreate(&stream[i]));
 #ifndef UnifiedMem
-    double* input;
-    double* output;
+    double** input = (double**) malloc(sizeof(double*)*MAXSTREAM);
+    double** output = (double**) malloc(sizeof(double*)*MAXSTREAM);
     double* fil;
     double* d_bias;
     
-    size_t inbytes = sizeof(double)*in_rows*in_cols*in_channels;
-    size_t outbytes = sizeof(double)*out_rows*out_cols*filter.size.x;
-    size_t filterbytes = sizeof(double)*filter_width*filter_width*in_channels*filter.size.x;
-    
-    CHECK(cudaMalloc(&input,inbytes));
-    CHECK(cudaMalloc(&output,outbytes));
+    int inbytes = sizeof(double)*in_rows*in_cols*in_channels;
+    int outbytes = sizeof(double)*out_rows*out_cols*filter.size.x;
+    int filterbytes = sizeof(double)*filter_width*filter_width*in_channels*filter.size.x;
+    for(int i = 0 ; i < MAXSTREAM ; i ++){
+      CHECK(cudaMalloc(&input[i],inbytes));
+      CHECK(cudaMalloc(&output[i],outbytes));
+    }
     CHECK(cudaMalloc(&fil,filterbytes));
     CHECK(cudaMalloc(&d_bias,sizeof(double)*filter.size.x));
     CHECK(cudaMemcpy(fil,this->filter.data[0],filterbytes,cudaMemcpyHostToDevice));
     CHECK(cudaMemcpy(d_bias,bias.data[0],sizeof(double)*filter.size.x,cudaMemcpyHostToDevice));
 
     if (padding)
-        for(int sample = 0 ; sample < _foward.size.x ; sample ++){
-            CHECK(cudaMemcpy(input,_input.data[sample],inbytes,cudaMemcpyHostToDevice));
-            convPad<<<gridSize,blockSize>>>(input,in_cols,in_rows,in_channels,fil,filter_width,filter.size.x,d_bias,output);
-            CHECK(cudaMemcpy(_foward.data[sample],output,outbytes,cudaMemcpyDeviceToHost));
+        for(int sample = 0 ; sample < _foward.size.x ; sample += MAXSTREAM){
+            for(int i = 0 ; i < MAXSTREAM ; i ++){
+                if (sample + i < _foward.size.x){
+                CHECK(cudaMemcpyAsync(input[i],_input.data[sample+i],inbytes,cudaMemcpyHostToDevice,stream[i]));
+                convPad<<<gridSize,blockSize,0,stream[i]>>>(input[i],in_cols,in_rows,in_channels,fil,filter_width,filter.size.x,d_bias,output[i]);
+                CHECK(cudaMemcpyAsync(_foward.data[sample+i],output[i],outbytes,cudaMemcpyDeviceToHost,stream[i]));
+                }
+            }
         }
     else
-        for(int sample = 0 ; sample < _foward.size.x ; sample ++){
-            CHECK(cudaMemcpy(input,_input.data[sample],inbytes,cudaMemcpyHostToDevice));
-            convNonePad<<<gridSize,blockSize>>>(input,in_cols,in_rows,in_channels,fil,filter_width,filter.size.x,d_bias,output);
-            CHECK(cudaMemcpy(_foward.data[sample],output,outbytes,cudaMemcpyDeviceToHost));
+        for(int sample = 0 ; sample < _foward.size.x ; sample += MAXSTREAM){
+            for(int i = 0 ; i < MAXSTREAM ; i ++){
+                if (sample + i < _foward.size.x){
+                CHECK(cudaMemcpyAsync(input[i],_input.data[sample+i],inbytes,cudaMemcpyHostToDevice,stream[i]));
+                convNonePad<<<gridSize,blockSize,0,stream[i]>>>(input[i],in_cols,in_rows,in_channels,fil,filter_width,filter.size.x,d_bias,output[i]);
+                CHECK(cudaMemcpyAsync(_foward.data[sample+i],output[i],outbytes,cudaMemcpyDeviceToHost,stream[i]));
+                }
+            }
         }
-
-    cudaFree(input);
-    cudaFree(output);
+    for(int i = 0 ; i < MAXSTREAM ; i ++){
+      CHECK(cudaFree(input[i]));
+      CHECK(cudaFree(output[i]));
+    }
+    free(input);
+    free(output);
     cudaFree(d_bias);
     cudaFree(fil);
 #else
     if (padding)
         for(int sample = 0 ; sample < _foward.size.x ; sample ++){
-            convPad<<<gridSize,blockSize>>>(_input.data[sample],in_cols,in_rows,in_channels,filter.data[0],filter_width,filter.size.x,bias.data[0],_foward.data[sample]);
+          for(int i = 0 ; i < MAXSTREAM ; i ++)
+            if (sample + i < _foward.size.x)
+              convPad<<<gridSize,blockSize,0,stream[i]>>>(_input.data[sample+i],in_cols,in_rows,in_channels,filter.data[0],filter_width,filter.size.x,bias.data[0],_foward.data[sample+i]);
         }
     else
         for(int sample = 0 ; sample < _foward.size.x ; sample ++){
-            convNonePad<<<gridSize,blockSize>>>(_input.data[sample],in_cols,in_rows,in_channels,filter.data[0],filter_width,filter.size.x,bias.data[0],_foward.data[sample]);
+          for(int i = 0 ; i < MAXSTREAM ; i ++)
+            if (sample + i < _foward.size.x)
+            convNonePad<<<gridSize,blockSize,0,stream[i]>>>(_input.data[sample+i],in_cols,in_rows,in_channels,filter.data[0],filter_width,filter.size.x,bias.data[0],_foward.data[sample+i]);
         }
 #endif
+  for (int i = 0 ; i < MAXSTREAM; i++)
+    CHECK(cudaStreamDestroy(stream[i]));
+  free(stream);
 }

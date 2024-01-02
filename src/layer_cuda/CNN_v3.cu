@@ -24,16 +24,15 @@ __global__ void matrix_multiplication_kernel_withBias(double* A, double* B, doub
     int Col = blockDim.x * blockIdx.x + threadIdx.x;
     
     double Cvalue = bias[Col/chanel_size];
-
     for (int ph = 0; ph < ((n - 1) / TILE_WIDTH) + 1; ph++) {
-
         // copy data
-        if (threadIdx.x + (ph * TILE_WIDTH) < n) {
+        if (threadIdx.x + (ph * TILE_WIDTH) < n && Row < m) {
             s_A[threadIdx.y][threadIdx.x] = A[(Row * n) + threadIdx.x + (ph * TILE_WIDTH)];
         } else {
             s_A[threadIdx.y][threadIdx.x] = 0.0;
         }
-        if (threadIdx.y + ph * TILE_WIDTH < n) {
+
+        if (threadIdx.y + ph * TILE_WIDTH < n && Col < k) {
             s_B[threadIdx.y][threadIdx.x] = B[(threadIdx.y + ph * TILE_WIDTH) * k + Col];
         } else {
             s_B[threadIdx.y][threadIdx.x] = 0.0;
@@ -47,7 +46,6 @@ __global__ void matrix_multiplication_kernel_withBias(double* A, double* B, doub
         }
          __syncthreads();
       }
-
     if (Row < m && Col < k)
       C[Row * k + Col] = Cvalue;
 
@@ -88,8 +86,6 @@ void CNN_cuda_v3::TransformFillter(double* filter_out,int n, int in_height,int i
         }
     }
     cudaFree(d_temp_filter);
-
-
 }
 
 void CNN_cuda_v3::forward(const Matrix& _input){
@@ -137,7 +133,6 @@ void CNN_cuda_v3::forward(const Matrix& _input){
         }
     }
     else{
-        //later
         CHECK(cudaMemset(d_input,0,sizeof(double)*k*n));
         int pad = filter_width/2;
         int sizecpy = in_cols*sizeof(double);
@@ -149,7 +144,6 @@ void CNN_cuda_v3::forward(const Matrix& _input){
                 }        
             }
         }
-
         // data in padding
     }
 
@@ -163,6 +157,50 @@ void CNN_cuda_v3::forward(const Matrix& _input){
     cudaFree(d_output);
     cudaFree(d_bias);
 #else
+    double *d_filter;
+    CHECK(cudaMalloc(&d_filter,sizeof(double)*m*n));
+    CHECK(cudaMemset(d_filter,0,sizeof(double)*m*n));
+    TransformFillter(d_filter,n,in_height,in_width);
+
+    double * filter_transpose;
+    CHECK(cudaMalloc(&filter_transpose,sizeof(double)*m*n));
+    dim3 gridFilter((n-1)/blockSize.x+1,(m-1)/blockSize.y+1);
+    TransposeKernel<<<gridFilter,blockSize>>>(d_filter,filter_transpose,m,n);
+    CHECK(cudaFree(d_filter));
+
+    _foward.setSize(_input.size.x, filter.size.x * out_cols *out_rows);
+    if(!padding){
+        if (_input.is_one_block())
+            matrix_multiplication_kernel_withBias<<<gridSize,blockSize>>>(_input.data[0],filter_transpose,_foward.data[0],k,n,m,bias.data[0],out_cols*out_rows);
+        else{
+            double *d_input;
+            CHECK(cudaMalloc(&d_input,sizeof(double)*n*k));
+            for(int i = 0 ; i < k ; i ++)
+                CHECK(cudaMemcpy(&d_input[i*n],_input.data[i],sizeof(double)*n,cudaMemcpyHostToDevice));
+            matrix_multiplication_kernel_withBias<<<gridSize,blockSize>>>(d_input,filter_transpose,_foward.data[0],k,n,m,bias.data[0],out_cols*out_rows);
+            cudaFree(d_input);
+        }
+    }
+    else{
+        double*d_input;
+        CHECK(cudaMemset(d_input,0,sizeof(double)*k*n));
+        int pad = filter_width/2;
+        int sizecpy = in_cols*sizeof(double);
+
+        for(int sample = 0; sample < _input.size.x;sample ++){
+            for(int depth = 0 ; depth < in_channels; depth++){
+                for (int r = 0; r < in_rows; r++){
+                    CHECK(cudaMemcpy(&d_input[sample*in_width*in_height*in_channels + depth*in_width*in_height + (r + pad)*in_width + pad],&_input.data[sample][depth*in_rows*in_cols + r*in_cols],sizecpy,cudaMemcpyHostToDevice));
+                }        
+            }
+        }
+        // data in padding
+
+        //
+        matrix_multiplication_kernel_withBias<<<gridSize,blockSize>>>(d_input,filter_transpose,_foward.data[0],k,n,m,bias.data[0],out_cols*out_rows);
+        cudaFree(d_input);
+    }
+    cudaFree(filter_transpose);
 
 #endif
 }

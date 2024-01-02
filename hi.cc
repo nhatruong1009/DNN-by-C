@@ -17,10 +17,7 @@
 clock_t start, end;
 double cpu_time_used;
 
-FILE * fil;
-
 int main(){
-    fil = fopen("allocated.txt","w");
     FMNIST data("./FMNIST/");
     printf("read data\n");
     data.read();

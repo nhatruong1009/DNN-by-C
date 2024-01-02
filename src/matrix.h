@@ -57,6 +57,19 @@ public:
         fprintf(fil,"[%d %d]\n",size.x,size.y);
     }
 
+    void update_one_block_status(){
+        oneblock = true;
+        if (size.x < 2)
+            return;
+        int s = data[1] - data[0];
+        for(int i = 2 ; i < size.x ; i ++){
+            if (data[i] - data[i-1] != s){
+                oneblock = false;
+                return;
+            }
+        }
+    }
+
     bool is_one_block() const {
         return oneblock;
     }
@@ -103,66 +116,14 @@ public:
 
 };
 
-
-
 class dataBatch{
     public:
     Matrix* data;
     Matrix* labels;
     int batch_size;
     int n_batch;
-    dataBatch(const Matrix& _data, const Matrix& _labels,int batch_size){
-        this->batch_size = batch_size;
-        n_batch = (_data.size.x-1)/batch_size+1;
-
-        data = (Matrix*)malloc(n_batch*sizeof(Matrix));
-        labels = (Matrix*)malloc(n_batch*sizeof(Matrix));
-
-        double** arr = (double**)malloc(_data.size.x*sizeof(double*));
-        double** arr_labels = (double**)malloc(_data.size.x*sizeof(double*));
-
-        memcpy(arr,_data.data,_data.size.x*sizeof(double*));
-        memcpy(arr_labels,_labels.data,_data.size.x*sizeof(double*));
-        // shuffer
-
-        srand ( time(NULL) );
- 
-        for (int i = _data.size.x-1; i > 0; i--)
-        {
-            int j = rand() % (i+1);
-            std::swap(arr[i], arr[j]);
-            std::swap(arr_labels[i], arr_labels[j]);
-        }
-
-        for(int i = 0 ; i < n_batch; i ++){
-
-            int size = (i != n_batch-1) ? batch_size : _data.size.x - i*batch_size;
-            data[i].data = (double**)malloc(size*sizeof(double*));
-            data[i].size.x = size;
-            data[i].size.y = _data.size.y;
-            memcpy(data[i].data,&arr[i*batch_size],size*sizeof(double*));
-            
-            labels[i].data = (double**)malloc(size*sizeof(double*));
-            labels[i].size.x = size;
-            labels[i].size.y = _labels.size.y;
-            memcpy(labels[i].data,&arr_labels[i*batch_size],size*sizeof(double*));
-
-        
-        }
-        free(arr);
-        free(arr_labels);
-    }
-    ~dataBatch(){
-        for(int i = 0 ; i < n_batch;i++){
-            free(data[i].data);
-            free(labels[i].data);
-            data[i].data=NULL;
-            labels[i].data = NULL;
-        }
-        free(data);
-        free(labels);
-    }
+    dataBatch(const Matrix& _data, const Matrix& _labels,int batch_size);
+    ~dataBatch();
 };
-
 
 #endif

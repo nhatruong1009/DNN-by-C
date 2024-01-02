@@ -14,28 +14,15 @@
 }
 
 
-
-Matrix::Matrix(){
-    this->size.x = 0;
-    this->size.y = 0;
-    this->data = NULL;
-}
+#ifdef UnifiedMem //
 
 Matrix::Matrix(int x,int y,bool oneblock){   
     this->size.x = x;
     this->size.y = y;
     this->oneblock = oneblock;
-    #ifndef UnifiedMem
-        this->data = (double**)malloc(size.x*sizeof(double*));
-    #else
-        CHECK(cudaMallocManaged(&this->data,sizeof(double*)*size.x));
-    #endif
+    CHECK(cudaMallocManaged(&this->data,sizeof(double*)*size.x));
     if (oneblock == true){
-        #ifndef UnifiedMem
-            data[0] = (double*)malloc(size.x*size.y*sizeof(double));
-        #else
-            CHECK(cudaMallocManaged(&this->data[0],sizeof(double)*size.x*size.y));
-        #endif
+        CHECK(cudaMallocManaged(&this->data[0],sizeof(double)*size.x*size.y));
         if(data[0] != NULL){
             for(int i = 1 ; i < size.x ; i++){
                 data[i] = data[0] + size.y*i; // this is legit :))
@@ -45,33 +32,22 @@ Matrix::Matrix(int x,int y,bool oneblock){
         this->oneblock = false;
     }
     
-    #ifndef UnifiedMem
-        for(int i = 0; i < size.x ; i++)
-            data[i] = (double*)malloc(size.y*sizeof(double));
-    #else
-        for(int i = 0; i < size.x ; i++)
-            CHECK(cudaMallocManaged(&this->data[i],sizeof(double)*size.y));
-    #endif
+    for(int i = 0; i < size.x ; i++)
+        CHECK(cudaMallocManaged(&this->data[i],sizeof(double)*size.y));
 }
 
 Matrix::Matrix(const Matrix& mal){
     this->setSize(mal.size);
 
     if (this->is_one_block() && mal.is_one_block()){
-        #ifndef UnifiedMem
-            memcpy(data[0], mal.data[0], size.x * size.y * sizeof(double) );
-        #else
-            CHECK(cudaMemcpy(data[0],mal.data[0],size.x * size.y * sizeof(double),cudaMemcpyDefault));
-        #endif
+        memcpy(data[0],mal.data[0],size.x * size.y * sizeof(double));
+        //CHECK(cudaMemcpy(data[0],mal.data[0],size.x * size.y * sizeof(double),cudaMemcpyDefault));
         return;
     }
 
     for(int i = 0 ; i < size.x; i++){
-        #ifndef UnifiedMem
-            memcpy(data[i], mal.data[i], size.y *sizeof(double));
-        #else
-            CHECK(cudaMemcpy(data[i],mal.data[i],size.y * sizeof(double),cudaMemcpyDefault));
-        #endif
+        memcpy(data[i],mal.data[i],size.y * sizeof(double));
+        //CHECK(cudaMemcpy(data[i],mal.data[i],size.y * sizeof(double),cudaMemcpyDefault));
     }
 }
 
@@ -79,20 +55,14 @@ bool Matrix::operator=(const Matrix& mal){
     this->setSize(mal.size);
 
     if (this->is_one_block() && mal.is_one_block()){
-        #ifndef UnifiedMem
-            memcpy(data[0], mal.data[0], size.x * size.y * sizeof(double) );
-        #else
-            CHECK(cudaMemcpy(data[0],mal.data[0],size.x * size.y * sizeof(double),cudaMemcpyDefault));
-        #endif
+        memcpy(data[0],mal.data[0],size.x * size.y * sizeof(double));
+        //CHECK(cudaMemcpy(data[0],mal.data[0],size.x * size.y * sizeof(double),cudaMemcpyDefault));
         return true;
     }
 
     for(int i = 0 ; i < size.x; i++){
-        #ifndef UnifiedMem
-            memcpy(data[i], mal.data[i], size.y * sizeof(double) );
-        #else
-            CHECK(cudaMemcpy(data[0],mal.data[0], size.y * sizeof(double),cudaMemcpyDefault));
-        #endif
+        memcpy(data[i],mal.data[i],size.y * sizeof(double));
+        //CHECK(cudaMemcpy(data[0],mal.data[0], size.y * sizeof(double),cudaMemcpyDefault));
     }
     return true;
 }
@@ -103,37 +73,15 @@ Matrix::~Matrix()
         return;
 
     if(oneblock == true){
-        #ifndef UnifiedMem
-            free(data[0]);
-            free(data);
-        #else
-            cudaFree(data[0]);
-            cudaFree(data);
-        #endif
+        cudaFree(data[0]);
+        cudaFree(data);
         return;
     }
     
-    #ifndef UnifiedMem
-        for(int i = 0 ; i < size.x; i++)
-            free(data[i]);
-    #else
-        for(int i = 0 ; i < size.x; i++)
-            cudaFree(data[i]);
-    #endif
+    for(int i = 0 ; i < size.x; i++)
+        cudaFree(data[i]);
     
-    #ifndef UnifiedMem
-        free(data);
-    #else
-        cudaFree(data);
-    #endif
-}
-
-void Matrix::apply(double(*func)(double)){
-    for(int i = 0 ; i < size.x ; i ++){
-        for(int k = 0 ; k <size.y;k++){
-            data[i][k] = func(data[i][k]);
-        }
-    }
+    cudaFree(data);
 }
 
 void Matrix::setSize(int x,int y,bool oneblock){
@@ -151,18 +99,10 @@ void Matrix::setSize(int x,int y,bool oneblock){
     this->size.x = x;
     this->size.y = y;
     
-    #ifndef UnifiedMem
-        this->data = (double**)malloc(size.x*sizeof(double*));
-    #else
-        CHECK(cudaMallocManaged(&this->data,sizeof(double*)*size.x));
-    #endif
+    CHECK(cudaMallocManaged(&this->data,sizeof(double*)*size.x));
 
     if (oneblock == true){
-        #ifndef UnifiedMem
-            data[0] = (double*)malloc(size.x*size.y*sizeof(double));
-        #else
-            CHECK(cudaMallocManaged(&this->data[0],sizeof(double*)*size.x*size.y));
-        #endif
+        CHECK(cudaMallocManaged(&this->data[0],sizeof(double*)*size.x*size.y));
         if(data[0] != NULL){
             for(int i = 1 ; i < size.x ; i++){
                 data[i] = data[i-1] + size.y; // this is legit :))
@@ -172,13 +112,127 @@ void Matrix::setSize(int x,int y,bool oneblock){
         this->oneblock = false;
     }
     
-    #ifndef UnifiedMem
-        for(int i = 0; i < size.x ; i++)
-            data[i] = (double*)malloc(size.y*sizeof(double));
-    #else
-        for(int i = 0; i < size.x ; i++)
-            CHECK(cudaMallocManaged(&this->data[i],sizeof(double*)*size.y));
-    #endif
+    for(int i = 0; i < size.x ; i++)
+        CHECK(cudaMallocManaged(&this->data[i],sizeof(double*)*size.y));
+}
+
+
+#else // Ram mem
+
+Matrix::Matrix(int x,int y,bool oneblock){   
+    this->size.x = x;
+    this->size.y = y;
+    this->oneblock = oneblock;
+    this->data = (double**)malloc(size.x*sizeof(double*));
+    if (oneblock == true){
+        data[0] = (double*)malloc(size.x*size.y*sizeof(double));
+        if(data[0] != NULL){
+            for(int i = 1 ; i < size.x ; i++){
+                data[i] = data[0] + size.y*i; // this is legit :))
+            }
+            return;
+        }
+        this->oneblock = false;
+    }
+    
+    for(int i = 0; i < size.x ; i++)
+        data[i] = (double*)malloc(size.y*sizeof(double));
+}
+
+Matrix::Matrix(const Matrix& mal){
+    this->setSize(mal.size);
+
+    if (this->is_one_block() && mal.is_one_block()){
+        memcpy(data[0], mal.data[0], size.x * size.y * sizeof(double) );
+        return;
+    }
+
+    for(int i = 0 ; i < size.x; i++){
+        memcpy(data[i], mal.data[i], size.y *sizeof(double));
+    }
+}
+
+bool Matrix::operator=(const Matrix& mal){
+    this->setSize(mal.size);
+
+    if (this->is_one_block() && mal.is_one_block()){
+        memcpy(data[0], mal.data[0], size.x * size.y * sizeof(double) );
+        return true;
+    }
+
+    for(int i = 0 ; i < size.x; i++){
+        memcpy(data[i], mal.data[i], size.y * sizeof(double) );
+    }
+    return true;
+}
+
+Matrix::~Matrix()
+{
+    if (data == NULL || size.x == 0 || size.y == 0)
+        return;
+
+    if(oneblock == true){
+        free(data[0]);
+        free(data);
+        return;
+    }
+    
+    for(int i = 0 ; i < size.x; i++)
+        free(data[i]);
+    
+    free(data);
+}
+
+void Matrix::setSize(int x,int y,bool oneblock){
+    if(x*y == size.x * size.y && this->oneblock == true){
+        size.x = x;
+        size.y = y;
+        //re_assign address; 
+        for(int i = 1 ; i < size.x ; i++){
+            data[i] = data[i-1] + size.y; // this is legit :))
+        }
+        return;
+    }
+    this->~Matrix();
+    this->oneblock = oneblock;
+    this->size.x = x;
+    this->size.y = y;
+    
+    this->data = (double**)malloc(size.x*sizeof(double*));
+
+    if (oneblock == true){
+        data[0] = (double*)malloc(size.x*size.y*sizeof(double));
+        if(data[0] != NULL){
+            for(int i = 1 ; i < size.x ; i++){
+                data[i] = data[i-1] + size.y; // this is legit :))
+            }
+            return;
+        }
+        this->oneblock = false;
+    }
+    
+    for(int i = 0; i < size.x ; i++)
+        data[i] = (double*)malloc(size.y*sizeof(double));
+}
+
+
+#endif
+
+
+Matrix::Matrix(){
+    this->size.x = 0;
+    this->size.y = 0;
+    this->data = NULL;
+}
+
+
+
+void Matrix::apply(double(*func)(double)){
+    for(int i = 0 ; i < size.x ; i ++){
+        for(int k = 0 ; k <size.y;k++){
+            data[i][k] = func(data[i][k]);
+        }
+    }
 }
 
 //operator
@@ -339,3 +393,112 @@ void Matrix::setval(int val){
     #endif
 
 }
+
+
+#ifdef UnifiedMem
+    dataBatch::dataBatch(const Matrix& _data, const Matrix& _labels,int batch_size){
+        this->batch_size = batch_size;
+        n_batch = (_data.size.x-1)/batch_size+1;
+
+        data = (Matrix*)malloc(n_batch*sizeof(Matrix));
+        labels = (Matrix*)malloc(n_batch*sizeof(Matrix));
+
+        double** arr;
+        cudaMallocManaged(&arr,_data.size.x*sizeof(double*));
+        double** arr_labels;
+        cudaMallocManaged(&arr_labels,_data.size.x*sizeof(double*));
+
+        memcpy(arr,_data.data,_data.size.x*sizeof(double*));
+        memcpy(arr_labels,_labels.data,_data.size.x*sizeof(double*));
+        // shuffer
+
+        srand ( time(NULL) );
+ 
+        for (int i = _data.size.x-1; i > 0; i--)
+        {
+            int j = rand() % (i+1);
+            std::swap(arr[i], arr[j]);
+            std::swap(arr_labels[i], arr_labels[j]);
+        }
+
+        for(int i = 0 ; i < n_batch; i ++){
+
+            int size = (i != n_batch-1) ? batch_size : _data.size.x - i*batch_size;
+            data[i].data;
+            cudaMallocManaged(&data[i].data,size*sizeof(double*));
+            data[i].size.x = size;
+            data[i].size.y = _data.size.y;
+            memcpy(data[i].data,&arr[i*batch_size],size*sizeof(double*));
+            
+            labels[i].data;
+            cudaMallocManaged(&labels[i].data,size*sizeof(double*));
+            labels[i].size.x = size;
+            labels[i].size.y = _labels.size.y;
+            memcpy(labels[i].data,&arr_labels[i*batch_size],size*sizeof(double*));
+        }
+        cudaFree(arr);
+        cudaFree(arr_labels);
+        data->update_one_block_status();
+        labels->update_one_block_status();
+    }
+    dataBatch::~dataBatch(){
+        for(int i = 0 ; i < n_batch;i++){
+            cudaFree(data[i].data);
+            cudaFree(labels[i].data);
+            data[i].data=NULL;
+            labels[i].data = NULL;
+        }
+        free(data);
+        free(labels);
+    }
+
+
+#else
+
+dataBatch::dataBatch(const Matrix& _data, const Matrix& _labels,int batch_size){
+    this->batch_size = batch_size;
+    n_batch = (_data.size.x-1)/batch_size+1;
+    data = (Matrix*)malloc(n_batch*sizeof(Matrix));
+    labels = (Matrix*)malloc(n_batch*sizeof(Matrix));
+    double** arr = (double**)malloc(_data.size.x*sizeof(double*));
+    double** arr_labels = (double**)malloc(_data.size.x*sizeof(double*));
+    memcpy(arr,_data.data,_data.size.x*sizeof(double*));
+    memcpy(arr_labels,_labels.data,_data.size.x*sizeof(double*));
+    // shuffer
+    srand ( time(NULL) );
+
+    for (int i = _data.size.x-1; i > 0; i--)
+    {
+        int j = rand() % (i+1);
+        std::swap(arr[i], arr[j]);
+        std::swap(arr_labels[i], arr_labels[j]);
+    }
+    for(int i = 0 ; i < n_batch; i ++){
+        int size = (i != n_batch-1) ? batch_size : _data.size.x - i*batch_size;
+        data[i].data = (double**)malloc(size*sizeof(double*));
+        data[i].size.x = size;
+        data[i].size.y = _data.size.y;
+        memcpy(data[i].data,&arr[i*batch_size],size*sizeof(double*));
+        
+        labels[i].data = (double**)malloc(size*sizeof(double*));
+        labels[i].size.x = size;
+        labels[i].size.y = _labels.size.y;
+        memcpy(labels[i].data,&arr_labels[i*batch_size],size*sizeof(double*));
+    }
+    free(arr);
+    free(arr_labels);
+    data->update_one_block_status();
+    labels->update_one_block_status();
+}
+dataBatch::~dataBatch(){
+    for(int i = 0 ; i < n_batch;i++){
+        free(data[i].data);
+        free(labels[i].data);
+        data[i].data=NULL;
+        labels[i].data = NULL;
+    }
+    free(data);
+    free(labels);
+}
+
+#endif
